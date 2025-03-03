@@ -799,6 +799,8 @@ async function runAnalysis() {
     document.getElementById('runAnalysis').style.display = 'block';
     document.getElementById('stopAnalysis').style.display = 'none';
     
+    window.analysisResults = analysisResults;
+    console.log(`Stored ${analysisResults.length} analysis results in global scope for export`);
     analysisRunning = false;
 }
 

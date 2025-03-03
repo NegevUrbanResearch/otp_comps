@@ -210,6 +210,9 @@ app.post('/export-html', async (req, res) => {
 });
 
 // Helper function to create the static export HTML template with analysis points
+// Replace the getExportTemplate function in enhanced-map-export-server.js with this version
+
+// Helper function to create the static export HTML template with analysis points
 function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, size, analysisParams, analysisResults = [] }) {
     // Create JSON string of analysis results for the script
     const analysisResultsJSON = JSON.stringify(analysisResults)
@@ -280,11 +283,18 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
                 text-align: center;
             }
             
-            .export-footer {
+            /* Add a params note overlay */
+            .params-note {
+                position: absolute;
+                bottom: 20px;
+                left: 20px;
+                background: rgba(22, 22, 22, 0.75);
+                color: white;
                 padding: 10px;
-                text-align: center;
+                border-radius: 6px;
                 font-size: 12px;
-                color: #555;
+                z-index: 1000;
+                max-width: 250px;
             }
         </style>
     </head>
@@ -325,9 +335,9 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
                 </div>
             </div>
             
-            <div class="export-footer">
-                <div>Analysis Parameters: Radius: ${analysisParams?.radius || 30}km, Grid Size: ${analysisParams?.gridSize || 1}km, Mode: ${analysisParams?.travelMode || 'Car'}</div>
-                <div>Generated on ${new Date().toLocaleDateString()}</div>
+            <!-- Add the params as a note overlay instead of a footer -->
+            <div class="params-note">
+                Analysis: ${analysisResults.length} points, Radius: ${analysisParams?.radius || 30}km, Grid: ${analysisParams?.gridSize || 1}km, Mode: ${analysisParams?.travelMode || 'Car'}, Generated: ${new Date().toLocaleDateString()}
             </div>
         </div>
         
