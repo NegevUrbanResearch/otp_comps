@@ -850,10 +850,9 @@ function displayPoint(result, baseRadius, sizeFactor, equalTimeThreshold) {
         }
     }
     
-    // Size based on absolute time difference, adjusted by size factor
-    // Limit the maximum size to prevent huge circles
-    const sizeMultiplier = Math.min(1 + (Math.abs(diffMinutes) / 30), 3);
-    const radius = baseRadius * sizeMultiplier * sizeFactor;
+    // REMOVED: Dynamic size scaling based on time difference
+    // Now using a fixed radius based only on the grid size
+    const radius = baseRadius * sizeFactor;
     
     const circle = L.circle(point, {
         radius: radius,
