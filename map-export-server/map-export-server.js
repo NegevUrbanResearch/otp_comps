@@ -102,10 +102,10 @@ app.post('/export-map', async (req, res) => {
         
         const page = await browser.newPage();
         
-        // Set viewport size
+        // Set viewport size - MODIFIED: remove the +180 additional space
         await page.setViewport({
             width: size.width,
-            height: size.height + 180,  // Add space for the title and legend
+            height: size.height,
             deviceScaleFactor: 2        // Higher resolution
         });
         
@@ -221,7 +221,7 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
     
     return `
     <!DOCTYPE html>
-    <html lang="en">
+    <html lang="en" style="margin:0; padding:0; height:100%;">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -229,16 +229,22 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
         <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
         <style>
-            body {
+            html, body {
                 margin: 0;
                 padding: 0;
+                height: 100%;
+                width: 100%;
+                overflow: hidden;
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background-color: #fff;
             }
             
             .export-container {
-                width: ${size.width}px;
-                margin: 0 auto;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                margin: 0;
+                padding: 0;
             }
             
             .export-header {
@@ -246,11 +252,14 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
                 background-color: #2c3e50;
                 color: white;
                 text-align: center;
+                flex-shrink: 0;
             }
             
             #export-map {
-                width: ${size.width}px;
-                height: ${size.height}px;
+                width: 100%;
+                flex-grow: 1;
+                margin: 0;
+                padding: 0;
             }
             
             .export-title {
@@ -370,6 +379,11 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
             }
             
             tileLayer.addTo(map);
+            
+            // Fix map container size
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
             
             // Add hospital markers
             const soroka = [31.258048100012424, 34.800391059526504];
@@ -690,15 +704,15 @@ function getInteractiveHtmlTemplate({ title, subtitle, basemap, mapBounds, cente
                             <div class="stat-value" id="total-points">Loading...</div>
                         </div>
                         <div class="stat-box">
-                            <div class="stat-title">Areas with Faster Access to Soroka</div>
+                            <div class="stat-title">Grid Areas with Faster Access to Soroka</div>
                             <div class="stat-value" id="soroka-faster">Loading...</div>
                         </div>
                         <div class="stat-box">
-                            <div class="stat-title">Areas with Faster Access to Peres</div>
+                            <div class="stat-title">Grid Areas with Faster Access to Peres</div>
                             <div class="stat-value" id="peres-faster">Loading...</div>
                         </div>
                         <div class="stat-box">
-                            <div class="stat-title">Areas with Equal Access</div>
+                            <div class="stat-title">Grid Areas with Approximately Equal Access</div>
                             <div class="stat-value" id="equal-access">Loading...</div>
                         </div>
                     </div>
