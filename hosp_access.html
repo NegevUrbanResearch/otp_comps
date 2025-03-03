@@ -1,43 +1,3 @@
-function exportAsHTML() {
-    if (analysisResults.length === 0) {
-        alert("No data to export. Run the analysis first.");
-        logger.warn("Export attempted with no data");
-        return;
-    }
-    
-    // Create a new HTML document that contains only what we need
-    const exportTitle = document.getElementById('exportTitleInput').value;
-    const exportSubtitle = document.getElementById('exportSubtitleInput').value;
-    
-    // Get the current map bounds to restore view in exported version
-    const bounds = map.getBounds();
-    const zoom = map.getZoom();
-    const center = map.getCenter();
-    
-    // Create GeoJSON from results to restore in exported version
-    const resultsGeoJSON = [];
-    analysisResults.forEach(result => {
-        const { point, timeDiff, timeToSoroka, timeToPeres } = result;
-        
-        let color;
-        if (Math.abs(timeDiff) < config.equalTimeThreshold * 60) {
-            color = 'rgba(128, 0, 128, 0.7)'; // Purple
-        } else if (timeDiff > 0) {
-            color = 'rgba(255, 0, 0, 0.7)'; // Red
-        } else {
-            color = 'rgba(0, 0, 255, 0.7)'; // Blue
-        }
-        
-        // Size based on absolute time difference
-        const diffMinutes = Math.abs(timeDiff) / 60;
-        const sizeMultiplier = Math.min(1 + (diffMinutes / 30), 3);
-        const baseRadius = Math.min(config.gridSize * 350, 500);
-        const radius = baseRadius * sizeMultiplier * config.circleSizeFactor;
-        
-        // Popup content
-        const sorokaTime = Math.round(timeToSoroka / 60);
-        const peresTime = Math.round(timeToPeres / 60);
-        const difference = Math.abs(Math.round(timeDiff / 60));
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -81,37 +41,96 @@ h1 {
     margin-top: 10px;
     opacity: 0.8;
 }
+/* Make sure the legend stays on the right */
 .legend {
     position: absolute;
     bottom: 30px;
     right: 30px;
-    background: white;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+    left: auto; /* Ensure it doesn't get moved to the left */
+    background: rgba(22, 22, 22, 0.85);
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
     z-index: 1000;
+    max-width: 350px;
+    backdrop-filter: blur(3px);
 }
 .legend-item {
     display: flex;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
 }
 .legend-color {
-    width: 20px;
-    height: 20px;
-    margin-right: 10px;
-    border-radius: 3px;
+    width: 24px;
+    height: 24px;
+    margin-right: 15px;
+    border-radius: 4px;
 }
+/* Updated CSS for the info-panel and related elements */
 .info-panel {
     position: absolute;
-    top: 20px;
-    right: 20px;
+    top: 80px;
+    left: 20px;
+    right: auto; /* Remove right positioning */
     background: white;
     padding: 15px;
     border-radius: 8px;
     box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
     z-index: 1000;
     max-width: 350px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Adjust location button to be below the panel */
+.location-button {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+    background: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 15px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    font-weight: bold;
+}
+
+
+
+/* Make leaflet controls more visible with panel on left */
+.leaflet-control-zoom {
+    margin-left: 380px !important; /* Push zoom controls right */
+}
+
+/* Make the panel compact */
+.setting-row {
+    margin-bottom: 8px;
+}
+
+.tab-content {
+    padding: 8px 0;
+}
+
+/* Add scrollbar styling for better appearance */
+.info-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.info-panel::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.info-panel::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.info-panel::-webkit-scrollbar-thumb:hover {
+    background: #555;
 }
 .loading {
     position: fixed;
@@ -299,38 +318,35 @@ select, input[type="range"] {
 </div>
 
 <div id="map"></div>
-
+<!-- Redesigned Legend with Improved Readability -->
 <div class="legend">
-<h3 style="margin-top: 0; margin-bottom: 10px;">Legend</h3>
-<div class="legend-item">
-    <div class="legend-color" style="background-color: rgba(0, 0, 255, 0.7);"></div>
-    <div>Faster to Soroka Medical Center</div>
-</div>
-<div class="legend-item">
-    <div class="legend-color" style="background-color: rgba(255, 0, 0, 0.7);"></div>
-    <div>Faster to Peres Hospital</div>
-</div>
-<div class="legend-item">
-    <div class="legend-color" style="background-color: rgba(128, 0, 128, 0.7);"></div>
-    <div>Equal Access (< 2 min difference)</div>
-</div>
-
-<div class="circle-size-legend">
-    <h4 style="margin-bottom: 5px;">Circle Size</h4>
-    <p style="margin-top: 0; font-size: 12px;">Indicates time difference magnitude</p>
-    <div class="circle-size-item">
-        <div class="circle-sample" style="width: 10px; height: 10px;"></div>
-        <div>< 5 minutes</div>
+    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 20px; text-align: center;">Travel Time Difference</h3>
+    
+    <!-- Combined continuous color spectrum from blue to purple to red with better labeling -->
+    <div style="display: flex; flex-direction: column; background: rgba(40,40,40,0.85); padding: 15px; border-radius: 8px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+            <span style="font-size: 18px; font-weight: bold; color: #84b3ff;">Soroka Faster</span>
+            <span style="text-align: center; font-size: 18px; font-weight: bold; color: #e084ff;">Equal</span>
+            <span style="text-align: right; font-size: 18px; font-weight: bold; color: #ff8484;">Peres Faster</span>
+        </div>
+        
+        <div style="display: flex; height: 40px; width: 100%; border-radius: 5px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+            <div style="flex: 1; background: linear-gradient(to right, #00008B, #0000FF, #8080FF, #C0C0FF, rgba(128, 0, 128, 0.9), #FFC0C0, #FF8080, #FF0000, #8B0000);"></div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; font-size: 16px; margin-top: 10px; font-weight: bold;">
+            <span>15+ min</span>
+            <span>10 min</span>
+            <span>5 min</span>
+            <span style="color: #e084ff;">0 min</span>
+            <span>5 min</span>
+            <span>10 min</span>
+            <span>15+ min</span>
+        </div>
+        <div style="text-align: center; margin-top: 15px; font-size: 14px; opacity: 0.8;">
+            <em>Note: Peres location set at highway offramp, thus 2 minutes were added to all Peres Hospital trips</em>
+        </div>
     </div>
-    <div class="circle-size-item">
-        <div class="circle-sample" style="width: 16px; height: 16px;"></div>
-        <div>5-15 minutes</div>
-    </div>
-    <div class="circle-size-item">
-        <div class="circle-sample" style="width: 22px; height: 22px;"></div>
-        <div>> 15 minutes</div>
-    </div>
-</div>
 </div>
 
 <div class="info-panel">
@@ -357,12 +373,6 @@ select, input[type="range"] {
         </div>
         
         <div class="setting-row">
-            <label for="circleSizeSlider">Circle size factor:</label>
-            <input type="range" id="circleSizeSlider" min="0.2" max="2" step="0.1" value="1">
-            <span class="setting-value" id="circleSizeValue">1.0</span>
-        </div>
-        
-        <div class="setting-row">
             <label for="travelModeSelect">Travel mode:</label>
             <select id="travelModeSelect">
                 <option value="CAR">Car</option>
@@ -372,14 +382,15 @@ select, input[type="range"] {
             </select>
         </div>
         
+        <!-- Replace the batch size select options in the HTML -->
         <div class="setting-row">
             <label for="batchSizeSelect">Batch size:</label>
             <select id="batchSizeSelect">
-                <option value="5">5 (Slower but stable)</option>
-                <option value="10">10</option>
-                <option value="20" selected>20</option>
-                <option value="50">50</option>
-                <option value="100">100 (Faster but may fail)</option>
+                <option value="50">50 (More stable)</option>
+                <option value="100" selected>100 (Default)</option>
+                <option value="200">200</option>
+                <option value="350">350</option>
+                <option value="500">500 (Fastest but may fail)</option>
             </select>
         </div>
         
@@ -405,8 +416,6 @@ select, input[type="range"] {
             <input type="text" id="exportSubtitleInput" value="Comparing travel times between Soroka Medical Center and Peres Hospital" style="width: 100%">
         </div>
         
-        <button id="exportPNG" style="background-color: #27ae60;">Export as PNG</button>
-        <button id="exportHTML" style="background-color: #f39c12;">Export as HTML</button>
         <button id="exportCSV" style="background-color: #9b59b6;">Export as CSV</button>
         
         <div id="exportStatus" style="margin-top: 10px; font-size: 12px;"></div>
@@ -527,20 +536,20 @@ const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     subdomains: 'abcd',
     maxZoom: 19
-}).addTo(map);
+});
 
 const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     subdomains: 'abcd',
     maxZoom: 19
-});
+}).addTo(map);
 
 logger.log("Map initialized with base layers");
 
 // Add layer control
 const baseLayers = {
-    "Light": streetLayer,
     "Dark": darkLayer,
+    "Light": streetLayer,
     "Satellite": sateliteLayer
 };
 
@@ -553,7 +562,7 @@ const sorokaMarker = L.marker(soroka)
     
 const newHospitalMarker = L.marker(newHospital)
     .addTo(map)
-    .bindPopup("<b>Peres Hospital</b><br>Recently built facility");
+    .bindPopup("<b>Peres Hospital</b><br>Planned facility");
 
 logger.log("Added hospital markers");
 
@@ -640,10 +649,6 @@ function updateSettings() {
     config.gridSize = parseFloat(document.getElementById('gridSizeSlider').value);
     document.getElementById('gridSize').textContent = `${config.gridSize} km`;
     
-    // Update circle size factor
-    config.circleSizeFactor = parseFloat(document.getElementById('circleSizeSlider').value);
-    document.getElementById('circleSizeValue').textContent = config.circleSizeFactor.toFixed(1);
-    
     // Update travel mode
     config.travelMode = document.getElementById('travelModeSelect').value;
     
@@ -667,27 +672,11 @@ function updateSettings() {
     // Update total points estimate
     const points = generateGrid(analysisCenter, config.radius, config.gridSize);
     document.getElementById('totalPoints').textContent = points.length;
-    
-    // Update circle size examples in legend
-    updateCircleSizeLegend();
-}
-
-// Update the circle size examples in the legend
-function updateCircleSizeLegend() {
-    const samples = document.querySelectorAll('.circle-sample');
-    const baseSizes = [10, 16, 22]; // Base sizes for the three examples
-    
-    samples.forEach((sample, index) => {
-        const size = baseSizes[index] * config.circleSizeFactor;
-        sample.style.width = `${size}px`;
-        sample.style.height = `${size}px`;
-    });
 }
 
 // Attach change event listeners to all input controls
 document.getElementById('radiusSlider').addEventListener('input', updateSettings);
 document.getElementById('gridSizeSlider').addEventListener('input', updateSettings);
-document.getElementById('circleSizeSlider').addEventListener('input', updateSettings);
 document.getElementById('travelModeSelect').addEventListener('change', updateSettings);
 document.getElementById('batchSizeSelect').addEventListener('change', updateSettings);
 
@@ -782,8 +771,13 @@ async function runAnalysis() {
                 const timeToSoroka = await getRouteTime(point, soroka, travelMode);
                 if (!analysisRunning) return;
                 
-                const timeToPeres = await getRouteTime(point, newHospital, travelMode);
+                let timeToPeres = await getRouteTime(point, newHospital, travelMode);
                 if (!analysisRunning) return;
+                
+                // Add 2 minutes (120 seconds) to Peres travel time
+                if (timeToPeres !== null) {
+                    timeToPeres += 120;
+                }
                 
                 if (timeToSoroka !== null && timeToPeres !== null) {
                     const timeDiff = timeToSoroka - timeToPeres; // positive: Peres Hospital is faster
@@ -846,36 +840,63 @@ async function runAnalysis() {
     analysisRunning = false;
 }
 
-// Function to display a point result on the map
+// Function to ensure circles are displayed correctly by bringing them to front
+function updateCircleLayerOrder() {
+    resultsLayer.eachLayer(function(layer) {
+        if (layer.getRadius) {
+            layer.bringToFront();
+        }
+    });
+}
+// Truly continuous color spectrum implementation
 function displayPoint(result, baseRadius, sizeFactor, equalTimeThreshold) {
     const { point, timeDiff, timeToSoroka, timeToPeres } = result;
     
-    let color, fillColor;
+    // Convert time difference from seconds to minutes for easier calculation
+    const diffMinutes = timeDiff / 60;
     
-    // Color based on which hospital is faster
-    if (Math.abs(timeDiff) < equalTimeThreshold * 60) { // Convert minutes to seconds
-        fillColor = 'rgba(128, 0, 128, 0.7)'; // Purple for balanced
-        color = '#4B0082';
-    } else if (timeDiff > 0) { // Peres Hospital is faster
-        fillColor = 'rgba(255, 0, 0, 0.7)'; // Red for Peres Hospital
-        color = '#8B0000';
-    } else { // Soroka is faster
-        fillColor = 'rgba(0, 0, 255, 0.7)'; // Blue for Soroka
-        color = '#00008B';
+    let fillColor;
+    
+    // Create a continuous color spectrum based on the exact time difference
+    if (Math.abs(diffMinutes) < equalTimeThreshold) {
+        // Purple for equal access (within threshold)
+        fillColor = 'rgba(128, 0, 128, 0.7)';
+    } else {
+        // Calculate the normalized position on the color spectrum
+        // Cap at 15 minutes difference for full intensity
+        const maxDiff = 15; // Minutes difference for max intensity
+        
+        // Map the time difference to a value between 0 and 1
+        // Uses a non-linear (power) mapping for more dramatic color changes
+        const normalizedValue = Math.min(Math.abs(diffMinutes) / maxDiff, 1);
+        const adjustedValue = Math.pow(normalizedValue, 1.5); // Non-linear adjustment
+        
+        if (diffMinutes > 0) { // Peres Hospital is faster (red spectrum)
+            // Smooth transition from white to deep red
+            // More red as advantage increases
+            const red = 255;
+            const greenBlue = Math.max(0, Math.floor(255 * (1 - adjustedValue)));
+            fillColor = `rgba(${red}, ${greenBlue}, ${greenBlue}, 0.8)`;
+        } else { // Soroka is faster (blue spectrum)
+            // Smooth transition from white to deep blue
+            // More blue as advantage increases
+            const blue = 255;
+            const redGreen = Math.max(0, Math.floor(255 * (1 - adjustedValue)));
+            fillColor = `rgba(${redGreen}, ${redGreen}, ${blue}, 0.8)`;
+        }
     }
     
     // Size based on absolute time difference, adjusted by size factor
     // Limit the maximum size to prevent huge circles
-    const diffMinutes = Math.abs(timeDiff) / 60;
-    const sizeMultiplier = Math.min(1 + (diffMinutes / 30), 3);
+    const sizeMultiplier = Math.min(1 + (Math.abs(diffMinutes) / 30), 3);
     const radius = baseRadius * sizeMultiplier * sizeFactor;
     
     const circle = L.circle(point, {
         radius: radius,
-        color: color,
+        color: fillColor,         // Use same color for border
         fillColor: fillColor,
-        fillOpacity: 0.6,
-        weight: 1,
+        fillOpacity: 0.8,
+        weight: 0,                // No outline
         // Store data for export
         data: {
             point: point,
@@ -905,6 +926,9 @@ function displayPoint(result, baseRadius, sizeFactor, equalTimeThreshold) {
         Peres Hospital: ${peresTime} minutes<br>
         <strong>${fasterHospital}</strong>
     `);
+    
+    // Ensure this circle is on top
+    circle.bringToFront();
 }
 
 // Function to clear all results
@@ -914,6 +938,39 @@ document.getElementById('clearResults').addEventListener('click', function() {
     logger.log("Cleared all results");
     document.getElementById('statusText').textContent = 'Results cleared';
 });
+
+// MAP EVENT LISTENERS FOR PROPER LAYER DISPLAY
+
+// Add event listeners to ensure circles stay on top
+map.on('zoomend', updateCircleLayerOrder);
+map.on('moveend', updateCircleLayerOrder);
+map.on('layeradd', function(e) {
+    // Delay slightly to ensure proper ordering
+    setTimeout(updateCircleLayerOrder, 100);
+});
+
+// Add this to the map initialization section
+// Set z-index of Leaflet panes to ensure proper stacking
+document.querySelector('.leaflet-overlay-pane').style.zIndex = 650;
+document.querySelector('.leaflet-marker-pane').style.zIndex = 700;
+
+// Make sure that after adding the base layers, we run this
+setTimeout(function() {
+    // If any circles exist, make sure they're on top
+    updateCircleLayerOrder();
+}, 1000);
+
+// Add CSS to the document to fix z-index issues
+const fixZIndexStyle = document.createElement('style');
+fixZIndexStyle.textContent = `
+    .leaflet-overlay-pane {
+        z-index: 650 !important;
+    }
+    .leaflet-marker-pane {
+        z-index: 700 !important;
+    }
+`;
+document.head.appendChild(fixZIndexStyle);
 
 // Event listeners
 document.getElementById('runAnalysis').addEventListener('click', runAnalysis);
@@ -990,79 +1047,8 @@ function exportToCSV() {
     logger.log(`Exported ${analysisResults.length} points to CSV`);
 }
 
-function exportAsHTML() {
-    if (analysisResults.length === 0) {
-        alert("No data to export. Run the analysis first.");
-        logger.warn("Export attempted with no data");
-        return;
-    }
-    
-    // Clone the current document
-    const htmlContent = document.documentElement.outerHTML;
-    
-    // Create a Blob containing the HTML content
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    
-    // Create a link and trigger download
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'hospital_analysis.html');
-    link.click();
-    
-    document.getElementById('exportStatus').textContent = 'HTML file exported successfully.';
-    logger.log('Exported analysis as HTML file');
-}
-
-async function exportAsPNG() {
-    if (analysisResults.length === 0) {
-        alert("No data to export. Run the analysis first.");
-        logger.warn("Export attempted with no data");
-        return;
-    }
-    
-    document.getElementById('exportStatus').textContent = 'Generating PNG...';
-    
-    try {
-        // Update map title with user input
-        const mapTitle = document.getElementById('exportTitleInput').value;
-        const mapSubtitle = document.getElementById('exportSubtitleInput').value;
-        
-        document.querySelector('.header h1').textContent = mapTitle;
-        document.querySelector('.header .subtitle').textContent = mapSubtitle;
-        
-        // Wait for UI to update
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Use html2canvas to capture the entire page
-        const canvas = await html2canvas(document.body, {
-            logging: false,
-            allowTaint: true,
-            useCORS: true
-        });
-        
-        // Convert canvas to blob
-        canvas.toBlob(function(blob) {
-            // Create download link
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = 'hospital_analysis.png';
-            link.click();
-            
-            document.getElementById('exportStatus').textContent = 'PNG exported successfully.';
-            logger.log('Exported analysis as PNG image');
-        }, 'image/png');
-    } catch (error) {
-        logger.error(`Error exporting PNG: ${error.message}`);
-        document.getElementById('exportStatus').textContent = 'Failed to export PNG. See console for details.';
-    }
-}
-
-// Attach export event listeners
+// Attach export event listener - only CSV export
 document.getElementById('exportCSV').addEventListener('click', exportToCSV);
-document.getElementById('exportHTML').addEventListener('click', exportAsHTML);
-document.getElementById('exportPNG').addEventListener('click', exportAsPNG);
 
 // Hide loading screen initially
 document.getElementById('loadingScreen').style.display = 'none';
