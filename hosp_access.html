@@ -1,728 +1,1074 @@
+function exportAsHTML() {
+    if (analysisResults.length === 0) {
+        alert("No data to export. Run the analysis first.");
+        logger.warn("Export attempted with no data");
+        return;
+    }
+    
+    // Create a new HTML document that contains only what we need
+    const exportTitle = document.getElementById('exportTitleInput').value;
+    const exportSubtitle = document.getElementById('exportSubtitleInput').value;
+    
+    // Get the current map bounds to restore view in exported version
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+    const center = map.getCenter();
+    
+    // Create GeoJSON from results to restore in exported version
+    const resultsGeoJSON = [];
+    analysisResults.forEach(result => {
+        const { point, timeDiff, timeToSoroka, timeToPeres } = result;
+        
+        let color;
+        if (Math.abs(timeDiff) < config.equalTimeThreshold * 60) {
+            color = 'rgba(128, 0, 128, 0.7)'; // Purple
+        } else if (timeDiff > 0) {
+            color = 'rgba(255, 0, 0, 0.7)'; // Red
+        } else {
+            color = 'rgba(0, 0, 255, 0.7)'; // Blue
+        }
+        
+        // Size based on absolute time difference
+        const diffMinutes = Math.abs(timeDiff) / 60;
+        const sizeMultiplier = Math.min(1 + (diffMinutes / 30), 3);
+        const baseRadius = Math.min(config.gridSize * 350, 500);
+        const radius = baseRadius * sizeMultiplier * config.circleSizeFactor;
+        
+        // Popup content
+        const sorokaTime = Math.round(timeToSoroka / 60);
+        const peresTime = Math.round(timeToPeres / 60);
+        const difference = Math.abs(Math.round(timeDiff / 60));
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hospital Access Analysis</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-    <!-- Fixed Turf.js CDN link -->
-    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
-        }
-        #map {
-            width: 100%;
-            height: 85vh;
-            z-index: 1;
-        }
-        .header {
-            padding: 20px;
-            background-color: #2c3e50;
-            color: white;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        h1 {
-            margin: 0;
-            font-size: 28px;
-        }
-        .subtitle {
-            font-size: 16px;
-            margin-top: 10px;
-            opacity: 0.8;
-        }
-        .legend {
-            position: absolute;
-            bottom: 30px;
-            right: 30px;
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-        .legend-color {
-            width: 20px;
-            height: 20px;
-            margin-right: 10px;
-            border-radius: 3px;
-        }
-        .info-panel {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-            max-width: 300px;
-        }
-        .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.8);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-        .spinner {
-            border: 8px solid #f3f3f3;
-            border-top: 8px solid #3498db;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 2s linear infinite;
-            margin-bottom: 20px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .location-button {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 1000;
-            background: white;
-            border: none;
-            border-radius: 8px;
-            padding: 10px 15px;
-            box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-            cursor: pointer;
-            font-weight: bold;
-        }
-        .location-button:hover {
-            background: #f0f0f0;
-        }
-        .status-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: #2c3e50;
-            color: white;
-            padding: 5px 20px;
-            font-size: 14px;
-            z-index: 1000;
-        }
-        .progress-container {
-            width: 80%;
-            margin-top: 20px;
-            background-color: #f3f3f3;
-            border-radius: 5px;
-            overflow: hidden;
-        }
-        .progress-bar {
-            height: 30px;
-            background-color: #3498db;
-            width: 0%;
-            text-align: center;
-            line-height: 30px;
-            color: white;
-            transition: width 0.3s;
-        }
-        #console-output {
-            position: fixed;
-            bottom: 30px;
-            left: 20px;
-            width: 400px;
-            max-height: 200px;
-            overflow-y: auto;
-            background: rgba(0, 0, 0, 0.8);
-            color: #00ff00;
-            padding: 10px;
-            font-family: monospace;
-            border-radius: 5px;
-            z-index: 1001;
-            display: none;
-        }
-        .toggle-console {
-            position: fixed;
-            bottom: 30px;
-            left: 20px;
-            z-index: 1002;
-            background: #333;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hospital Access Analysis</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<style>
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+}
+#map {
+    width: 100%;
+    height: 85vh;
+    z-index: 1;
+}
+.header {
+    padding: 20px;
+    background-color: #2c3e50;
+    color: white;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+h1 {
+    margin: 0;
+    font-size: 28px;
+}
+.subtitle {
+    font-size: 16px;
+    margin-top: 10px;
+    opacity: 0.8;
+}
+.legend {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.legend-color {
+    width: 20px;
+    height: 20px;
+    margin-right: 10px;
+    border-radius: 3px;
+}
+.info-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    max-width: 350px;
+}
+.loading {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+.spinner {
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #3498db;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 2s linear infinite;
+    margin-bottom: 20px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.location-button {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+    background: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 15px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    font-weight: bold;
+}
+.location-button:hover {
+    background: #f0f0f0;
+}
+.status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #2c3e50;
+    color: white;
+    padding: 5px 20px;
+    font-size: 14px;
+    z-index: 1000;
+}
+.progress-container {
+    width: 80%;
+    margin-top: 20px;
+    background-color: #f3f3f3;
+    border-radius: 5px;
+    overflow: hidden;
+}
+.progress-bar {
+    height: 30px;
+    background-color: #3498db;
+    width: 0%;
+    text-align: center;
+    line-height: 30px;
+    color: white;
+    transition: width 0.3s;
+}
+#console-output {
+    position: fixed;
+    bottom: 30px;
+    left: 20px;
+    width: 400px;
+    max-height: 200px;
+    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.8);
+    color: #00ff00;
+    padding: 10px;
+    font-family: monospace;
+    border-radius: 5px;
+    z-index: 1001;
+    display: none;
+}
+.toggle-console {
+    position: fixed;
+    bottom: 30px;
+    left: 20px;
+    z-index: 1002;
+    background: #333;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 5px 10px;
+    cursor: pointer;
+}
+.setting-row {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.setting-row label {
+    margin-right: 10px;
+    min-width: 120px;
+}
+.setting-value {
+    margin-left: 10px;
+    font-weight: bold;
+    min-width: 40px;
+    text-align: right;
+}
+button {
+    padding: 8px 12px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 5px;
+    margin-right: 5px;
+}
+button:hover {
+    background-color: #2980b9;
+}
+select, input[type="range"] {
+    padding: 5px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+.export-section {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+}
+.circle-size-legend {
+    display: flex;
+    flex-direction: column;
+    margin-top: 15px;
+}
+.circle-size-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+}
+.circle-sample {
+    border-radius: 50%;
+    border: 1px solid #666;
+    margin-right: 10px;
+}
+.tab-container {
+    margin-top: 10px;
+}
+.tab-buttons {
+    display: flex;
+    border-bottom: 1px solid #ccc;
+}
+.tab-button {
+    padding: 8px 15px;
+    background: none;
+    border: none;
+    border-radius: 4px 4px 0 0;
+    margin-right: 5px;
+    cursor: pointer;
+    color: #555;
+}
+.tab-button.active {
+    background-color: #3498db;
+    color: white;
+}
+.tab-content {
+    padding: 10px 0;
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+</style>
 </head>
 <body>
-    <div class="header">
-        <h1>Hospital Accessibility Analysis</h1>
-        <div class="subtitle">Comparing drive times between Soroka Medical Center and New Hospital</div>
+<div class="header">
+<h1>Hospital Accessibility Analysis</h1>
+<div class="subtitle">Comparing travel times between Soroka Medical Center and Peres Hospital</div>
+</div>
+
+<div id="map"></div>
+
+<div class="legend">
+<h3 style="margin-top: 0; margin-bottom: 10px;">Legend</h3>
+<div class="legend-item">
+    <div class="legend-color" style="background-color: rgba(0, 0, 255, 0.7);"></div>
+    <div>Faster to Soroka Medical Center</div>
+</div>
+<div class="legend-item">
+    <div class="legend-color" style="background-color: rgba(255, 0, 0, 0.7);"></div>
+    <div>Faster to Peres Hospital</div>
+</div>
+<div class="legend-item">
+    <div class="legend-color" style="background-color: rgba(128, 0, 128, 0.7);"></div>
+    <div>Equal Access (< 2 min difference)</div>
+</div>
+
+<div class="circle-size-legend">
+    <h4 style="margin-bottom: 5px;">Circle Size</h4>
+    <p style="margin-top: 0; font-size: 12px;">Indicates time difference magnitude</p>
+    <div class="circle-size-item">
+        <div class="circle-sample" style="width: 10px; height: 10px;"></div>
+        <div>< 5 minutes</div>
+    </div>
+    <div class="circle-size-item">
+        <div class="circle-sample" style="width: 16px; height: 16px;"></div>
+        <div>5-15 minutes</div>
+    </div>
+    <div class="circle-size-item">
+        <div class="circle-sample" style="width: 22px; height: 22px;"></div>
+        <div>> 15 minutes</div>
+    </div>
+</div>
+</div>
+
+<div class="info-panel">
+<h3 style="margin-top: 0;">Analysis Parameters</h3>
+
+<div class="tab-container">
+    <div class="tab-buttons">
+        <button class="tab-button active" data-tab="settings">Settings</button>
+        <button class="tab-button" data-tab="export">Export</button>
+        <button class="tab-button" data-tab="about">About</button>
     </div>
     
-    <div id="map"></div>
-    
-    <div class="legend">
-        <h3 style="margin-top: 0; margin-bottom: 10px;">Legend</h3>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: rgba(0, 0, 255, 0.7);"></div>
-            <div>Faster to Soroka Medical Center</div>
+    <div class="tab-content active" data-tab="settings">
+        <div class="setting-row">
+            <label for="radiusSlider">Analysis radius:</label>
+            <input type="range" id="radiusSlider" min="5" max="50" step="1" value="30">
+            <span class="setting-value" id="radiusValue">30 km</span>
         </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: rgba(255, 0, 0, 0.7);"></div>
-            <div>Faster to New Hospital</div>
-        </div>
-        <div class="legend-item">
-            <div class="legend-color" style="background-color: rgba(128, 0, 128, 0.7);"></div>
-            <div>Equal Access (< 2 min difference)</div>
-        </div>
-    </div>
-    
-    <div class="info-panel">
-        <h3 style="margin-top: 0;">Analysis Parameters</h3>
-        <p><strong>Radius:</strong> 30 km</p>
-        <p><strong>Grid size:</strong> <span id="gridSize">1</span> km (<span id="totalPoints">0</span> points)</p>
-        <p><strong>Mode:</strong> CAR</p>
-        <div>
+        
+        <div class="setting-row">
             <label for="gridSizeSlider">Grid resolution:</label>
-            <input type="range" id="gridSizeSlider" min="0.5" max="2" step="0.25" value="1">
+            <input type="range" id="gridSizeSlider" min="0.2" max="5" step="0.1" value="1">
+            <span class="setting-value" id="gridSize">1 km</span>
         </div>
-        <div>
-            <label for="batchSizeSelect">Batch size:</label>
-            <select id="batchSizeSelect">
-                <option value="5">5 (Slower but more stable)</option>
-                <option value="10" selected>10 (Balanced)</option>
-                <option value="20">20 (Faster but may fail)</option>
+        
+        <div class="setting-row">
+            <label for="circleSizeSlider">Circle size factor:</label>
+            <input type="range" id="circleSizeSlider" min="0.2" max="2" step="0.1" value="1">
+            <span class="setting-value" id="circleSizeValue">1.0</span>
+        </div>
+        
+        <div class="setting-row">
+            <label for="travelModeSelect">Travel mode:</label>
+            <select id="travelModeSelect">
+                <option value="CAR">Car</option>
+                <option value="WALK">Walking</option>
+                <option value="BICYCLE">Bicycle</option>
+                <option value="TRANSIT,WALK">Public Transit</option>
             </select>
         </div>
-        <button id="runAnalysis" style="margin-top: 10px; padding: 8px 12px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Run Analysis</button>
-        <button id="stopAnalysis" style="margin-top: 10px; padding: 8px 12px; background-color: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; display: none;">Stop Analysis</button>
-    </div>
-    
-    <button class="location-button" id="locateMe">📍 Locate Me</button>
-    <button class="toggle-console" id="toggleConsole">Show Console</button>
-    
-    <div id="console-output"></div>
-    
-    <div class="status-bar">
-        <span id="statusText">Ready for analysis</span>
-    </div>
-    
-    <div class="loading" id="loadingScreen">
-        <div class="spinner"></div>
-        <div id="progressText">Preparing analysis...</div>
-        <div class="progress-container">
-            <div class="progress-bar" id="progressBar">0%</div>
+        
+        <div class="setting-row">
+            <label for="batchSizeSelect">Batch size:</label>
+            <select id="batchSizeSelect">
+                <option value="5">5 (Slower but stable)</option>
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100 (Faster but may fail)</option>
+            </select>
         </div>
+        
+        <div class="setting-row">
+            <span>Total grid points: <strong id="totalPoints">0</strong></span>
+        </div>
+        
+        <button id="runAnalysis">Run Analysis</button>
+        <button id="stopAnalysis" style="background-color: #e74c3c; display: none;">Stop Analysis</button>
+        <button id="clearResults" style="background-color: #95a5a6;">Clear Results</button>
     </div>
     
-    <script>
-        // Enhanced console logging
-        const consoleOutput = document.getElementById('console-output');
-        const logger = {
-            log: function(message) {
-                console.log(message);
-                const logEntry = document.createElement('div');
-                logEntry.textContent = `[INFO] ${message}`;
-                consoleOutput.appendChild(logEntry);
-                consoleOutput.scrollTop = consoleOutput.scrollHeight;
-            },
-            error: function(message) {
-                console.error(message);
-                const logEntry = document.createElement('div');
-                logEntry.textContent = `[ERROR] ${message}`;
-                logEntry.style.color = '#ff5252';
-                consoleOutput.appendChild(logEntry);
-                consoleOutput.scrollTop = consoleOutput.scrollHeight;
-            },
-            warn: function(message) {
-                console.warn(message);
-                const logEntry = document.createElement('div');
-                logEntry.textContent = `[WARN] ${message}`;
-                logEntry.style.color = '#ffd600';
-                consoleOutput.appendChild(logEntry);
-                consoleOutput.scrollTop = consoleOutput.scrollHeight;
-            }
-        };
+    <div class="tab-content" data-tab="export">
+        <h4 style="margin-top: 0;">Export Options</h4>
         
-        // Toggle console visibility
-        document.getElementById('toggleConsole').addEventListener('click', function() {
-            const consoleOutput = document.getElementById('console-output');
-            const isHidden = consoleOutput.style.display === 'none';
-            consoleOutput.style.display = isHidden ? 'block' : 'none';
-            this.textContent = isHidden ? 'Hide Console' : 'Show Console';
-        });
+        <div class="setting-row">
+            <label for="exportTitleInput">Map title:</label>
+            <input type="text" id="exportTitleInput" value="Hospital Accessibility Analysis" style="width: 100%">
+        </div>
         
-        // Hospital coordinates
-        const soroka = [31.258048100012424, 34.800391059526504];
-        const newHospital = [31.225231573088337, 34.828545558768404];
+        <div class="setting-row">
+            <label for="exportSubtitleInput">Subtitle:</label>
+            <input type="text" id="exportSubtitleInput" value="Comparing travel times between Soroka Medical Center and Peres Hospital" style="width: 100%">
+        </div>
         
-        // Control variable to allow stopping analysis
-        let analysisRunning = false;
+        <button id="exportPNG" style="background-color: #27ae60;">Export as PNG</button>
+        <button id="exportHTML" style="background-color: #f39c12;">Export as HTML</button>
+        <button id="exportCSV" style="background-color: #9b59b6;">Export as CSV</button>
         
-        // Initialize map
-        logger.log("Initializing map...");
-        const map = L.map('map').setView([31.240, 34.815], 11);
+        <div id="exportStatus" style="margin-top: 10px; font-size: 12px;"></div>
+    </div>
+    
+    <div class="tab-content" data-tab="about">
+        <h4 style="margin-top: 0;">About This Tool</h4>
+        <p>This tool analyzes and visualizes travel times between two hospitals in Beer Sheva, Israel:</p>
+        <ul>
+            <li>Soroka Medical Center (31.258, 34.800)</li>
+            <li>Peres Hospital (31.225, 34.829)</li>
+        </ul>
+        <p>It uses OpenTripPlanner to calculate travel times and generates a heatmap showing which areas have faster access to each hospital.</p>
+        <p>Created using Leaflet for mapping and OTP for routing.</p>
+    </div>
+</div>
+</div>
+
+<button class="location-button" id="locateMe">📍 Locate Me</button>
+<button class="toggle-console" id="toggleConsole">Show Console</button>
+
+<div id="console-output"></div>
+
+<div class="status-bar">
+<span id="statusText">Ready for analysis</span>
+</div>
+
+<div class="loading" id="loadingScreen">
+<div class="spinner"></div>
+<div id="progressText">Preparing analysis...</div>
+<div class="progress-container">
+    <div class="progress-bar" id="progressBar">0%</div>
+</div>
+</div>
+
+<script>
+// Enhanced console logging
+const consoleOutput = document.getElementById('console-output');
+const logger = {
+    log: function(message) {
+        console.log(message);
+        const logEntry = document.createElement('div');
+        logEntry.textContent = `[INFO] ${message}`;
+        consoleOutput.appendChild(logEntry);
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    },
+    error: function(message) {
+        console.error(message);
+        const logEntry = document.createElement('div');
+        logEntry.textContent = `[ERROR] ${message}`;
+        logEntry.style.color = '#ff5252';
+        consoleOutput.appendChild(logEntry);
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    },
+    warn: function(message) {
+        console.warn(message);
+        const logEntry = document.createElement('div');
+        logEntry.textContent = `[WARN] ${message}`;
+        logEntry.style.color = '#ffd600';
+        consoleOutput.appendChild(logEntry);
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+};
+
+// Toggle console visibility
+document.getElementById('toggleConsole').addEventListener('click', function() {
+    const consoleOutput = document.getElementById('console-output');
+    const isHidden = consoleOutput.style.display === 'none';
+    consoleOutput.style.display = isHidden ? 'block' : 'none';
+    this.textContent = isHidden ? 'Hide Console' : 'Show Console';
+});
+
+// Tab functionality
+document.querySelectorAll('.tab-button').forEach(button => {
+    button.addEventListener('click', function() {
+        const tabName = this.getAttribute('data-tab');
         
-        // Add basemap layers
-        const sateliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-        });
+        // Deactivate all tabs
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
         
-        const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-            subdomains: 'abcd',
-            maxZoom: 19
-        }).addTo(map);
+        // Activate selected tab
+        this.classList.add('active');
+        document.querySelector(`.tab-content[data-tab="${tabName}"]`).classList.add('active');
+    });
+});
+
+// Hospital coordinates
+const soroka = [31.258048100012424, 34.800391059526504];
+const newHospital = [31.225231573088337, 34.828545558768404];
+
+// Control variable to allow stopping analysis
+let analysisRunning = false;
+
+// Results storage
+let analysisResults = [];
+
+// Configuration settings with default values
+const config = {
+    radius: 30,             // Analysis radius in km
+    gridSize: 1,            // Grid cell size in km
+    travelMode: 'CAR',      // Travel mode
+    batchSize: 20,          // API request batch size
+    circleSizeFactor: 1.0,  // Circle size multiplier
+    equalTimeThreshold: 2   // Minutes threshold for "equal" access time
+};
+
+// Initialize map
+logger.log("Initializing map...");
+const map = L.map('map').setView([31.240, 34.815], 11);
+
+// Add basemap layers
+const sateliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+});
+
+const streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19
+}).addTo(map);
+
+const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19
+});
+
+logger.log("Map initialized with base layers");
+
+// Add layer control
+const baseLayers = {
+    "Light": streetLayer,
+    "Dark": darkLayer,
+    "Satellite": sateliteLayer
+};
+
+L.control.layers(baseLayers).addTo(map);
+
+// Add hospital markers
+const sorokaMarker = L.marker(soroka)
+    .addTo(map)
+    .bindPopup("<b>Soroka Medical Center</b><br>Major medical facility");
+    
+const newHospitalMarker = L.marker(newHospital)
+    .addTo(map)
+    .bindPopup("<b>Peres Hospital</b><br>Recently built facility");
+
+logger.log("Added hospital markers");
+
+// Add circle showing the analysis radius
+const analysisCenter = [(soroka[0] + newHospital[0]) / 2, (soroka[1] + newHospital[1]) / 2];
+let radiusCircle = L.circle(analysisCenter, {
+    radius: config.radius * 1000,
+    color: '#2c3e50',
+    fillColor: '#2c3e50',
+    fillOpacity: 0.05,
+    weight: 2,
+    dashArray: '5,10'
+}).addTo(map);
+
+logger.log(`Added ${config.radius}km radius circle`);
+
+// Create layer group for analysis results
+const resultsLayer = L.layerGroup().addTo(map);
+
+// Function to generate grid points within radius
+function generateGrid(center, radius, gridSize) {
+    logger.log(`Generating grid with center [${center}], radius ${radius}km, grid size ${gridSize}km`);
+    
+    try {
+        const points = [];
         
-        const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-            subdomains: 'abcd',
-            maxZoom: 19
-        });
+        // Calculate bounding box
+        const latDelta = radius / 111;
+        const lonDelta = radius / (111 * Math.cos(center[0] * Math.PI / 180));
         
-        logger.log("Map initialized with base layers");
+        const bbox = [
+            center[1] - lonDelta, // west
+            center[0] - latDelta, // south
+            center[1] + lonDelta, // east
+            center[0] + latDelta  // north
+        ];
         
-        // Add layer control
-        const baseLayers = {
-            "Light": streetLayer,
-            "Dark": darkLayer,
-            "Satellite": sateliteLayer
-        };
+        logger.log(`Bounding box: W:${bbox[0].toFixed(4)}, S:${bbox[1].toFixed(4)}, E:${bbox[2].toFixed(4)}, N:${bbox[3].toFixed(4)}`);
         
-        L.control.layers(baseLayers).addTo(map);
+        // Calculate step size in degrees
+        const gridSizeInDegreesLat = gridSize / 111;
+        const gridSizeInDegreesLon = gridSize / (111 * Math.cos(center[0] * Math.PI / 180));
         
-        // Add hospital markers
-        const sorokaMarker = L.marker(soroka)
-            .addTo(map)
-            .bindPopup("<b>Soroka Medical Center</b><br>Major medical facility");
-            
-        const newHospitalMarker = L.marker(newHospital)
-            .addTo(map)
-            .bindPopup("<b>New Hospital</b><br>Recently built facility");
+        logger.log(`Grid size in degrees: ${gridSizeInDegreesLat.toFixed(6)} lat, ${gridSizeInDegreesLon.toFixed(6)} lon`);
         
-        logger.log("Added hospital markers");
-        
-        // Add circle showing the 30km analysis radius
-        const analysisCenter = [(soroka[0] + newHospital[0]) / 2, (soroka[1] + newHospital[1]) / 2];
-        const radiusCircle = L.circle(analysisCenter, {
-            radius: 30000,
-            color: '#2c3e50',
-            fillColor: '#2c3e50',
-            fillOpacity: 0.05,
-            weight: 2,
-            dashArray: '5,10'
-        }).addTo(map);
-        
-        logger.log("Added 30km radius circle");
-        
-        // Create layer group for analysis results
-        const resultsLayer = L.layerGroup().addTo(map);
-        
-        // Function to generate grid points within radius
-        function generateGrid(center, radius, gridSize) {
-            logger.log(`Generating grid with center [${center}], radius ${radius}km, grid size ${gridSize}km`);
-            
-            try {
-                const points = [];
-                const radiusInDegrees = radius / 111;
+        // Generate points
+        for (let lat = bbox[1]; lat <= bbox[3]; lat += gridSizeInDegreesLat) {
+            for (let lon = bbox[0]; lon <= bbox[2]; lon += gridSizeInDegreesLon) {
+                const point = [lat, lon];
                 
-                // Calculate bounding box
-                const latDelta = radius / 111;
-                const lonDelta = radius / (111 * Math.cos(center[0] * Math.PI / 180));
+                // Calculate distance from center using haversine formula
+                const dLat = (center[0] - lat) * Math.PI / 180;
+                const dLon = (center[1] - lon) * Math.PI / 180;
+                const a = 
+                    Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat * Math.PI / 180) * Math.cos(center[0] * Math.PI / 180) * 
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                const distance = 6371 * c; // Earth radius in km
                 
-                const bbox = [
-                    center[1] - lonDelta, // west
-                    center[0] - latDelta, // south
-                    center[1] + lonDelta, // east
-                    center[0] + latDelta  // north
-                ];
-                
-                logger.log(`Bounding box: W:${bbox[0].toFixed(4)}, S:${bbox[1].toFixed(4)}, E:${bbox[2].toFixed(4)}, N:${bbox[3].toFixed(4)}`);
-                
-                // Calculate step size in degrees
-                const gridSizeInDegreesLat = gridSize / 111;
-                const gridSizeInDegreesLon = gridSize / (111 * Math.cos(center[0] * Math.PI / 180));
-                
-                logger.log(`Grid size in degrees: ${gridSizeInDegreesLat.toFixed(6)} lat, ${gridSizeInDegreesLon.toFixed(6)} lon`);
-                
-                // Generate points
-                for (let lat = bbox[1]; lat <= bbox[3]; lat += gridSizeInDegreesLat) {
-                    for (let lon = bbox[0]; lon <= bbox[2]; lon += gridSizeInDegreesLon) {
-                        const point = [lat, lon];
-                        
-                        // Calculate distance from center using haversine formula
-                        const dLat = (center[0] - lat) * Math.PI / 180;
-                        const dLon = (center[1] - lon) * Math.PI / 180;
-                        const a = 
-                            Math.sin(dLat/2) * Math.sin(dLat/2) +
-                            Math.cos(lat * Math.PI / 180) * Math.cos(center[0] * Math.PI / 180) * 
-                            Math.sin(dLon/2) * Math.sin(dLon/2);
-                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                        const distance = 6371 * c; // Earth radius in km
-                        
-                        if (distance <= radius) {
-                            points.push(point);
-                        }
-                    }
-                }
-                
-                logger.log(`Generated ${points.length} points within ${radius}km radius`);
-                document.getElementById('totalPoints').textContent = points.length;
-                return points;
-            } catch (error) {
-                logger.error(`Error generating grid: ${error.message}`);
-                console.error("Full error:", error);
-                return [];
-            }
-        }
-        
-        // Update estimated point count on page load
-        (function updateInitialPointCount() {
-            try {
-                const gridSize = parseFloat(document.getElementById('gridSizeSlider').value);
-                document.getElementById('gridSize').textContent = gridSize;
-                
-                const center = [(soroka[0] + newHospital[0]) / 2, (soroka[1] + newHospital[1]) / 2];
-                const points = generateGrid(center, 30, gridSize);
-                document.getElementById('totalPoints').textContent = points.length;
-                logger.log(`Initial point count: ${points.length}`);
-            } catch (error) {
-                logger.error(`Error calculating initial point count: ${error.message}`);
-            }
-        })();
-        
-        // OTP API functions
-        async function getRouteTime(origin, destination) {
-            try {
-                const url = `http://localhost:8080/otp/routers/default/plan?fromPlace=${origin[0]},${origin[1]}&toPlace=${destination[0]},${destination[1]}&mode=CAR&time=12:00pm&date=03-03-2025`;
-                
-                logger.log(`Fetching route: ${origin[0].toFixed(4)},${origin[1].toFixed(4)} to ${destination[0].toFixed(4)},${destination[1].toFixed(4)}`);
-                
-                const response = await fetch(url);
-                const data = await response.json();
-                
-                if (data.plan && data.plan.itineraries && data.plan.itineraries.length > 0) {
-                    const duration = data.plan.itineraries[0].duration;
-                    logger.log(`Route found: ${Math.round(duration/60)} minutes`);
-                    return duration;
-                } else {
-                    logger.warn(`No route found between ${origin[0].toFixed(4)},${origin[1].toFixed(4)} and ${destination[0].toFixed(4)},${destination[1].toFixed(4)}`);
-                    return null;
-                }
-            } catch (error) {
-                logger.error(`Error fetching route: ${error.message}`);
-                return null;
-            }
-        }
-        
-        // Main analysis function
-        async function runAnalysis() {
-            if (analysisRunning) {
-                logger.warn("Analysis already in progress");
-                return;
-            }
-            
-            analysisRunning = true;
-            
-            const gridSize = parseFloat(document.getElementById('gridSizeSlider').value);
-            document.getElementById('gridSize').textContent = gridSize;
-            
-            const batchSize = parseInt(document.getElementById('batchSizeSelect').value);
-            logger.log(`Starting analysis with grid size ${gridSize}km and batch size ${batchSize}`);
-            
-            // Show loading screen and stop button
-            document.getElementById('loadingScreen').style.display = 'flex';
-            document.getElementById('runAnalysis').style.display = 'none';
-            document.getElementById('stopAnalysis').style.display = 'block';
-            document.getElementById('progressText').textContent = 'Generating analysis grid...';
-            document.getElementById('statusText').textContent = 'Analysis running...';
-            document.getElementById('progressBar').style.width = '0%';
-            document.getElementById('progressBar').textContent = '0%';
-            
-            // Clear previous results
-            resultsLayer.clearLayers();
-            logger.log("Cleared previous results");
-            
-            // Allow UI to update
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Generate grid points
-            const gridPoints = generateGrid(analysisCenter, 30, gridSize);
-            
-            if (gridPoints.length === 0) {
-                logger.error("Failed to generate grid points. Stopping analysis.");
-                analysisRunning = false;
-                document.getElementById('loadingScreen').style.display = 'none';
-                document.getElementById('runAnalysis').style.display = 'block';
-                document.getElementById('stopAnalysis').style.display = 'none';
-                document.getElementById('statusText').textContent = 'Analysis failed: Could not generate grid points';
-                return;
-            }
-            
-            let processed = 0;
-            let successes = 0;
-            let failures = 0;
-            const results = [];
-            
-            // Process in batches to avoid overwhelming the API
-            for (let i = 0; i < gridPoints.length && analysisRunning; i += batchSize) {
-                const batch = gridPoints.slice(i, i + batchSize);
-                const batchPromises = batch.map(async (point, index) => {
-                    if (!analysisRunning) return;
-                    
-                    try {
-                        logger.log(`Processing point ${processed + index + 1}/${gridPoints.length}: [${point[0].toFixed(4)}, ${point[1].toFixed(4)}]`);
-                        
-                        const timeToSoroka = await getRouteTime(point, soroka);
-                        if (!analysisRunning) return;
-                        
-                        const timeToNewHospital = await getRouteTime(point, newHospital);
-                        if (!analysisRunning) return;
-                        
-                        if (timeToSoroka !== null && timeToNewHospital !== null) {
-                            const timeDiff = timeToSoroka - timeToNewHospital; // positive: new hospital is faster
-                            successes++;
-                            results.push({
-                                point: point,
-                                timeDiff: timeDiff,
-                                timeToSoroka: timeToSoroka,
-                                timeToNewHospital: timeToNewHospital
-                            });
-                            
-                            // Add point to map immediately for visual feedback
-                            displayPoint({
-                                point: point,
-                                timeDiff: timeDiff,
-                                timeToSoroka: timeToSoroka,
-                                timeToNewHospital: timeToNewHospital
-                            });
-                        } else {
-                            failures++;
-                            logger.warn(`Failed to get route for point [${point[0].toFixed(4)}, ${point[1].toFixed(4)}]`);
-                        }
-                    } catch (error) {
-                        failures++;
-                        logger.error(`Error processing point ${processed + index + 1}: ${error.message}`);
-                    }
-                });
-                
-                await Promise.all(batchPromises);
-                
-                processed += batch.length;
-                
-                // Update progress
-                const progressPercent = Math.round((processed / gridPoints.length) * 100);
-                document.getElementById('progressBar').style.width = `${progressPercent}%`;
-                document.getElementById('progressBar').textContent = `${progressPercent}%`;
-                document.getElementById('progressText').textContent = 
-                    `Processed ${processed} of ${gridPoints.length} points (${successes} successful, ${failures} failed)`;
-                document.getElementById('statusText').textContent = 
-                    `Analysis in progress: ${progressPercent}% complete`;
-                
-                // Small delay to prevent overwhelming the server
-                if (analysisRunning) {
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                if (distance <= radius) {
+                    points.push(point);
                 }
             }
-            
-            // Update final status
-            if (!analysisRunning) {
-                document.getElementById('statusText').textContent = `Analysis stopped by user after processing ${processed} points`;
-                logger.log("Analysis stopped by user");
-            } else {
-                document.getElementById('statusText').textContent = `Analysis complete: ${results.length} points processed (${failures} failed)`;
-                logger.log(`Analysis complete: ${results.length} points processed successfully, ${failures} failed`);
-            }
-            
-            // Hide loading screen and restore run button
-            document.getElementById('loadingScreen').style.display = 'none';
-            document.getElementById('runAnalysis').style.display = 'block';
-            document.getElementById('stopAnalysis').style.display = 'none';
-            
-            analysisRunning = false;
         }
         
-        // Function to display a point result on the map
-        function displayPoint(result) {
-            const { point, timeDiff, timeToSoroka, timeToNewHospital } = result;
-            
-            let color, fillColor, radius;
-            
-            if (Math.abs(timeDiff) < 120) { // Less than 2 minutes difference
-                fillColor = 'rgba(128, 0, 128, 0.7)'; // Purple for balanced
-                color = '#4B0082';
-            } else if (timeDiff > 0) { // New hospital is faster
-                fillColor = 'rgba(255, 0, 0, 0.7)'; // Red for new hospital
-                color = '#8B0000';
-            } else { // Soroka is faster
-                fillColor = 'rgba(0, 0, 255, 0.7)'; // Blue for Soroka
-                color = '#00008B';
-            }
-            
-            // Size based on absolute time difference
-            radius = 200 + (Math.min(Math.abs(timeDiff) / 60, 20) * 100);
-            
-            const circle = L.circle(point, {
-                radius: radius,
-                color: color,
-                fillColor: fillColor,
-                fillOpacity: 0.6,
-                weight: 1
-            }).addTo(resultsLayer);
-            
-            // Popup info
-            const sorokaTime = Math.round(timeToSoroka / 60);
-            const newHospitalTime = Math.round(timeToNewHospital / 60);
-            const difference = Math.abs(Math.round(timeDiff / 60));
-            
-            let fasterHospital;
-            if (Math.abs(timeDiff) < 120) {
-                fasterHospital = "Equal access (< 2 min difference)";
-            } else if (timeDiff > 0) {
-                fasterHospital = `New Hospital is faster by ${difference} min`;
-            } else {
-                fasterHospital = `Soroka is faster by ${difference} min`;
-            }
-            
-            circle.bindPopup(`
-                <strong>Access Times:</strong><br>
-                Soroka Medical Center: ${sorokaTime} minutes<br>
-                New Hospital: ${newHospitalTime} minutes<br>
-                <strong>${fasterHospital}</strong>
-            `);
+        logger.log(`Generated ${points.length} points within ${radius}km radius`);
+        document.getElementById('totalPoints').textContent = points.length;
+        return points;
+    } catch (error) {
+        logger.error(`Error generating grid: ${error.message}`);
+        console.error("Full error:", error);
+        return [];
+    }
+}
+
+// Update settings and UI when values change
+function updateSettings() {
+    // Update radius
+    config.radius = parseInt(document.getElementById('radiusSlider').value);
+    document.getElementById('radiusValue').textContent = `${config.radius} km`;
+    
+    // Update grid size
+    config.gridSize = parseFloat(document.getElementById('gridSizeSlider').value);
+    document.getElementById('gridSize').textContent = `${config.gridSize} km`;
+    
+    // Update circle size factor
+    config.circleSizeFactor = parseFloat(document.getElementById('circleSizeSlider').value);
+    document.getElementById('circleSizeValue').textContent = config.circleSizeFactor.toFixed(1);
+    
+    // Update travel mode
+    config.travelMode = document.getElementById('travelModeSelect').value;
+    
+    // Update batch size
+    config.batchSize = parseInt(document.getElementById('batchSizeSelect').value);
+    
+    // Update radius circle on map
+    if (radiusCircle) {
+        map.removeLayer(radiusCircle);
+    }
+    
+    radiusCircle = L.circle(analysisCenter, {
+        radius: config.radius * 1000,
+        color: '#2c3e50',
+        fillColor: '#2c3e50',
+        fillOpacity: 0.05,
+        weight: 2,
+        dashArray: '5,10'
+    }).addTo(map);
+    
+    // Update total points estimate
+    const points = generateGrid(analysisCenter, config.radius, config.gridSize);
+    document.getElementById('totalPoints').textContent = points.length;
+    
+    // Update circle size examples in legend
+    updateCircleSizeLegend();
+}
+
+// Update the circle size examples in the legend
+function updateCircleSizeLegend() {
+    const samples = document.querySelectorAll('.circle-sample');
+    const baseSizes = [10, 16, 22]; // Base sizes for the three examples
+    
+    samples.forEach((sample, index) => {
+        const size = baseSizes[index] * config.circleSizeFactor;
+        sample.style.width = `${size}px`;
+        sample.style.height = `${size}px`;
+    });
+}
+
+// Attach change event listeners to all input controls
+document.getElementById('radiusSlider').addEventListener('input', updateSettings);
+document.getElementById('gridSizeSlider').addEventListener('input', updateSettings);
+document.getElementById('circleSizeSlider').addEventListener('input', updateSettings);
+document.getElementById('travelModeSelect').addEventListener('change', updateSettings);
+document.getElementById('batchSizeSelect').addEventListener('change', updateSettings);
+
+// Initialize settings on page load
+updateSettings();
+
+// OTP API functions
+async function getRouteTime(origin, destination, mode) {
+    try {
+        const url = `http://localhost:8080/otp/routers/default/plan?fromPlace=${origin[0]},${origin[1]}&toPlace=${destination[0]},${destination[1]}&mode=${mode}&time=12:00pm&date=03-03-2025`;
+        
+        logger.log(`Fetching route: ${origin[0].toFixed(4)},${origin[1].toFixed(4)} to ${destination[0].toFixed(4)},${destination[1].toFixed(4)}`);
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.plan && data.plan.itineraries && data.plan.itineraries.length > 0) {
+            const duration = data.plan.itineraries[0].duration;
+            logger.log(`Route found: ${Math.round(duration/60)} minutes`);
+            return duration;
+        } else {
+            logger.warn(`No route found between ${origin[0].toFixed(4)},${origin[1].toFixed(4)} and ${destination[0].toFixed(4)},${destination[1].toFixed(4)}`);
+            return null;
         }
-        
-        // Event listeners
-        document.getElementById('runAnalysis').addEventListener('click', runAnalysis);
-        
-        document.getElementById('stopAnalysis').addEventListener('click', function() {
-            logger.log("User requested to stop analysis");
-            analysisRunning = false;
-            document.getElementById('progressText').textContent = 'Stopping analysis...';
-        });
-        
-        document.getElementById('gridSizeSlider').addEventListener('input', function() {
-            try {
-                const gridSize = parseFloat(this.value);
-                document.getElementById('gridSize').textContent = gridSize;
-                
-                // Update estimated point count
-                const points = generateGrid(analysisCenter, 30, gridSize);
-                document.getElementById('totalPoints').textContent = points.length;
-            } catch (error) {
-                logger.error(`Error updating point count: ${error.message}`);
-            }
-        });
-        
-        document.getElementById('locateMe').addEventListener('click', function() {
-            logger.log("User requested location");
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(position => {
-                    const userLocation = [position.coords.latitude, position.coords.longitude];
-                    logger.log(`User location found: ${userLocation[0].toFixed(4)}, ${userLocation[1].toFixed(4)}`);
-                    
-                    map.setView(userLocation, 13);
-                    
-                    L.marker(userLocation, {
-                        icon: L.divIcon({
-                            className: 'user-location',
-                            html: '<div style="background-color: #3498db; width: 15px; height: 15px; border-radius: 50%; border: 3px solid white;"></div>',
-                            iconSize: [15, 15],
-                            iconAnchor: [8, 8]
-                        })
-                    }).addTo(map).bindPopup("Your location").openPopup();
-                    
-                }, error => {
-                    logger.error(`Error getting location: ${error.message} (code: ${error.code})`);
-                    alert("Unable to get your location. Please check your browser permissions.");
-                });
-            } else {
-                logger.warn("Geolocation is not supported by this browser");
-                alert("Geolocation is not supported by your browser.");
-            }
-        });
-        
-        // Export data option
-        function exportToCSV(data) {
-            const csvRows = [];
-            
-            // Add header
-            csvRows.push("latitude,longitude,timeToSoroka,timeToNewHospital,timeDifference,fasterHospital");
-            
-            // Add rows
-            data.forEach(item => {
-                const fasterHospital = item.timeDiff < 0 ? "Soroka" : item.timeDiff > 0 ? "NewHospital" : "Equal";
-                csvRows.push(
-                    `${item.point[0]},${item.point[1]},${item.timeToSoroka},${item.timeToNewHospital},${item.timeDiff},${fasterHospital}`
-                );
-            });
-            
-            // Create blob and download
-            const csvString = csvRows.join('\n');
-            const blob = new Blob([csvString], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', 'hospital_analysis.csv');
-            link.click();
-        }
-        
-        // Add export button to info panel
-        const exportButton = document.createElement('button');
-        exportButton.textContent = 'Export Results';
-        exportButton.style.marginTop = '10px';
-        exportButton.style.padding = '8px 12px';
-        exportButton.style.backgroundColor = '#27ae60';
-        exportButton.style.color = 'white';
-        exportButton.style.border = 'none';
-        exportButton.style.borderRadius = '4px';
-        exportButton.style.cursor = 'pointer';
-        exportButton.onclick = function() {
-            // Get data from results layer
-            const exportData = [];
-            resultsLayer.eachLayer(layer => {
-                if (layer instanceof L.Circle) {
-                    const data = layer.options.data;
-                    if (data) {
-                        exportData.push(data);
-                    }
-                }
-            });
-            
-            if (exportData.length > 0) {
-                exportToCSV(exportData);
-                logger.log(`Exported ${exportData.length} points to CSV`);
-            } else {
-                alert("No data to export. Run the analysis first.");
-                logger.warn("Export attempted with no data");
-            }
-        };
-        document.querySelector('.info-panel').appendChild(exportButton);
-        
-        // Hide loading screen initially
+    } catch (error) {
+        logger.error(`Error fetching route: ${error.message}`);
+        return null;
+    }
+}
+
+// Main analysis function
+async function runAnalysis() {
+    if (analysisRunning) {
+        logger.warn("Analysis already in progress");
+        return;
+    }
+    
+    analysisRunning = true;
+    analysisResults = [];
+    
+    // Show loading screen and stop button
+    document.getElementById('loadingScreen').style.display = 'flex';
+    document.getElementById('runAnalysis').style.display = 'none';
+    document.getElementById('stopAnalysis').style.display = 'block';
+    document.getElementById('progressText').textContent = 'Generating analysis grid...';
+    document.getElementById('statusText').textContent = 'Analysis running...';
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressBar').textContent = '0%';
+    
+    // Access current settings
+    const { radius, gridSize, travelMode, batchSize, circleSizeFactor, equalTimeThreshold } = config;
+    
+    logger.log(`Starting analysis with radius ${radius}km, grid size ${gridSize}km, travel mode ${travelMode}, and batch size ${batchSize}`);
+    
+    // Clear previous results if requested
+    resultsLayer.clearLayers();
+    logger.log("Cleared previous results");
+    
+    // Allow UI to update
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Generate grid points
+    const gridPoints = generateGrid(analysisCenter, radius, gridSize);
+    
+    if (gridPoints.length === 0) {
+        logger.error("Failed to generate grid points. Stopping analysis.");
+        analysisRunning = false;
         document.getElementById('loadingScreen').style.display = 'none';
+        document.getElementById('runAnalysis').style.display = 'block';
+        document.getElementById('stopAnalysis').style.display = 'none';
+        document.getElementById('statusText').textContent = 'Analysis failed: Could not generate grid points';
+        return;
+    }
+    
+    let processed = 0;
+    let successes = 0;
+    let failures = 0;
+    
+    // Calculate max circle radius based on grid size
+    // Smaller grid = smaller circles to prevent overlap
+    const baseRadius = Math.min(gridSize * 350, 500);
+    
+    // Process in batches to avoid overwhelming the API
+    for (let i = 0; i < gridPoints.length && analysisRunning; i += batchSize) {
+        const batch = gridPoints.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (point, index) => {
+            if (!analysisRunning) return;
+            
+            try {
+                logger.log(`Processing point ${processed + index + 1}/${gridPoints.length}: [${point[0].toFixed(4)}, ${point[1].toFixed(4)}]`);
+                
+                const timeToSoroka = await getRouteTime(point, soroka, travelMode);
+                if (!analysisRunning) return;
+                
+                const timeToPeres = await getRouteTime(point, newHospital, travelMode);
+                if (!analysisRunning) return;
+                
+                if (timeToSoroka !== null && timeToPeres !== null) {
+                    const timeDiff = timeToSoroka - timeToPeres; // positive: Peres Hospital is faster
+                    successes++;
+                    
+                    const result = {
+                        point: point,
+                        timeDiff: timeDiff,
+                        timeToSoroka: timeToSoroka,
+                        timeToPeres: timeToPeres
+                    };
+                    
+                    analysisResults.push(result);
+                    
+                    // Add point to map immediately for visual feedback
+                    displayPoint(result, baseRadius, circleSizeFactor, equalTimeThreshold);
+                } else {
+                    failures++;
+                    logger.warn(`Failed to get route for point [${point[0].toFixed(4)}, ${point[1].toFixed(4)}]`);
+                }
+            } catch (error) {
+                failures++;
+                logger.error(`Error processing point ${processed + index + 1}: ${error.message}`);
+            }
+        });
         
-        // Log initialization complete
-        logger.log("Application initialized and ready");
-    </script>
+        await Promise.all(batchPromises);
+        
+        processed += batch.length;
+        
+        // Update progress
+        const progressPercent = Math.round((processed / gridPoints.length) * 100);
+        document.getElementById('progressBar').style.width = `${progressPercent}%`;
+        document.getElementById('progressBar').textContent = `${progressPercent}%`;
+        document.getElementById('progressText').textContent = 
+            `Processed ${processed} of ${gridPoints.length} points (${successes} successful, ${failures} failed)`;
+        document.getElementById('statusText').textContent = 
+            `Analysis in progress: ${progressPercent}% complete`;
+        
+        // Small delay to prevent overwhelming the server
+        if (analysisRunning) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+    }
+    
+    // Update final status
+    if (!analysisRunning) {
+        document.getElementById('statusText').textContent = `Analysis stopped by user after processing ${processed} points`;
+        logger.log("Analysis stopped by user");
+    } else {
+        document.getElementById('statusText').textContent = `Analysis complete: ${successes} points processed (${failures} failed)`;
+        logger.log(`Analysis complete: ${successes} points processed successfully, ${failures} failed`);
+    }
+    
+    // Hide loading screen and restore run button
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('runAnalysis').style.display = 'block';
+    document.getElementById('stopAnalysis').style.display = 'none';
+    
+    analysisRunning = false;
+}
+
+// Function to display a point result on the map
+function displayPoint(result, baseRadius, sizeFactor, equalTimeThreshold) {
+    const { point, timeDiff, timeToSoroka, timeToPeres } = result;
+    
+    let color, fillColor;
+    
+    // Color based on which hospital is faster
+    if (Math.abs(timeDiff) < equalTimeThreshold * 60) { // Convert minutes to seconds
+        fillColor = 'rgba(128, 0, 128, 0.7)'; // Purple for balanced
+        color = '#4B0082';
+    } else if (timeDiff > 0) { // Peres Hospital is faster
+        fillColor = 'rgba(255, 0, 0, 0.7)'; // Red for Peres Hospital
+        color = '#8B0000';
+    } else { // Soroka is faster
+        fillColor = 'rgba(0, 0, 255, 0.7)'; // Blue for Soroka
+        color = '#00008B';
+    }
+    
+    // Size based on absolute time difference, adjusted by size factor
+    // Limit the maximum size to prevent huge circles
+    const diffMinutes = Math.abs(timeDiff) / 60;
+    const sizeMultiplier = Math.min(1 + (diffMinutes / 30), 3);
+    const radius = baseRadius * sizeMultiplier * sizeFactor;
+    
+    const circle = L.circle(point, {
+        radius: radius,
+        color: color,
+        fillColor: fillColor,
+        fillOpacity: 0.6,
+        weight: 1,
+        // Store data for export
+        data: {
+            point: point,
+            timeToSoroka: timeToSoroka,
+            timeToPeres: timeToPeres,
+            timeDiff: timeDiff
+        }
+    }).addTo(resultsLayer);
+    
+    // Popup info
+    const sorokaTime = Math.round(timeToSoroka / 60);
+    const peresTime = Math.round(timeToPeres / 60);
+    const difference = Math.abs(Math.round(timeDiff / 60));
+    
+    let fasterHospital;
+    if (Math.abs(timeDiff) < equalTimeThreshold * 60) {
+        fasterHospital = `Equal access (< ${equalTimeThreshold} min difference)`;
+    } else if (timeDiff > 0) {
+        fasterHospital = `Peres Hospital is faster by ${difference} min`;
+    } else {
+        fasterHospital = `Soroka is faster by ${difference} min`;
+    }
+    
+    circle.bindPopup(`
+        <strong>Access Times:</strong><br>
+        Soroka Medical Center: ${sorokaTime} minutes<br>
+        Peres Hospital: ${peresTime} minutes<br>
+        <strong>${fasterHospital}</strong>
+    `);
+}
+
+// Function to clear all results
+document.getElementById('clearResults').addEventListener('click', function() {
+    resultsLayer.clearLayers();
+    analysisResults = [];
+    logger.log("Cleared all results");
+    document.getElementById('statusText').textContent = 'Results cleared';
+});
+
+// Event listeners
+document.getElementById('runAnalysis').addEventListener('click', runAnalysis);
+
+document.getElementById('stopAnalysis').addEventListener('click', function() {
+    logger.log("User requested to stop analysis");
+    analysisRunning = false;
+    document.getElementById('progressText').textContent = 'Stopping analysis...';
+});
+
+document.getElementById('locateMe').addEventListener('click', function() {
+    logger.log("User requested location");
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+            const userLocation = [position.coords.latitude, position.coords.longitude];
+            logger.log(`User location found: ${userLocation[0].toFixed(4)}, ${userLocation[1].toFixed(4)}`);
+            
+            map.setView(userLocation, 13);
+            
+            L.marker(userLocation, {
+                icon: L.divIcon({
+                    className: 'user-location',
+                    html: '<div style="background-color: #3498db; width: 15px; height: 15px; border-radius: 50%; border: 3px solid white;"></div>',
+                    iconSize: [15, 15],
+                    iconAnchor: [8, 8]
+                })
+            }).addTo(map).bindPopup("Your location").openPopup();
+            
+        }, error => {
+            logger.error(`Error getting location: ${error.message} (code: ${error.code})`);
+            alert("Unable to get your location. Please check your browser permissions.");
+        });
+    } else {
+        logger.warn("Geolocation is not supported by this browser");
+        alert("Geolocation is not supported by your browser.");
+    }
+});
+
+// Export functions
+function exportToCSV() {
+    if (analysisResults.length === 0) {
+        alert("No data to export. Run the analysis first.");
+        logger.warn("Export attempted with no data");
+        return;
+    }
+    
+    const csvRows = [];
+    
+    // Add header
+    csvRows.push("latitude,longitude,timeToSoroka,timeToPeres,timeDifference,fasterHospital");
+    
+    // Add rows
+    analysisResults.forEach(result => {
+        const fasterHospital = 
+            Math.abs(result.timeDiff) < config.equalTimeThreshold * 60 ? "Equal" : 
+            result.timeDiff > 0 ? "Peres" : "Soroka";
+        
+        csvRows.push(
+            `${result.point[0]},${result.point[1]},${result.timeToSoroka},${result.timeToPeres},${result.timeDiff},${fasterHospital}`
+        );
+    });
+    
+    // Create blob and download
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'hospital_analysis.csv');
+    link.click();
+    
+    document.getElementById('exportStatus').textContent = `CSV exported with ${analysisResults.length} data points.`;
+    logger.log(`Exported ${analysisResults.length} points to CSV`);
+}
+
+function exportAsHTML() {
+    if (analysisResults.length === 0) {
+        alert("No data to export. Run the analysis first.");
+        logger.warn("Export attempted with no data");
+        return;
+    }
+    
+    // Clone the current document
+    const htmlContent = document.documentElement.outerHTML;
+    
+    // Create a Blob containing the HTML content
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create a link and trigger download
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'hospital_analysis.html');
+    link.click();
+    
+    document.getElementById('exportStatus').textContent = 'HTML file exported successfully.';
+    logger.log('Exported analysis as HTML file');
+}
+
+async function exportAsPNG() {
+    if (analysisResults.length === 0) {
+        alert("No data to export. Run the analysis first.");
+        logger.warn("Export attempted with no data");
+        return;
+    }
+    
+    document.getElementById('exportStatus').textContent = 'Generating PNG...';
+    
+    try {
+        // Update map title with user input
+        const mapTitle = document.getElementById('exportTitleInput').value;
+        const mapSubtitle = document.getElementById('exportSubtitleInput').value;
+        
+        document.querySelector('.header h1').textContent = mapTitle;
+        document.querySelector('.header .subtitle').textContent = mapSubtitle;
+        
+        // Wait for UI to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Use html2canvas to capture the entire page
+        const canvas = await html2canvas(document.body, {
+            logging: false,
+            allowTaint: true,
+            useCORS: true
+        });
+        
+        // Convert canvas to blob
+        canvas.toBlob(function(blob) {
+            // Create download link
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'hospital_analysis.png';
+            link.click();
+            
+            document.getElementById('exportStatus').textContent = 'PNG exported successfully.';
+            logger.log('Exported analysis as PNG image');
+        }, 'image/png');
+    } catch (error) {
+        logger.error(`Error exporting PNG: ${error.message}`);
+        document.getElementById('exportStatus').textContent = 'Failed to export PNG. See console for details.';
+    }
+}
+
+// Attach export event listeners
+document.getElementById('exportCSV').addEventListener('click', exportToCSV);
+document.getElementById('exportHTML').addEventListener('click', exportAsHTML);
+document.getElementById('exportPNG').addEventListener('click', exportAsPNG);
+
+// Hide loading screen initially
+document.getElementById('loadingScreen').style.display = 'none';
+
+// Log initialization complete
+logger.log("Application initialized and ready");
+</script>
 </body>
 </html>
