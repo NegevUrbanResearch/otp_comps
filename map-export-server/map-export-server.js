@@ -424,6 +424,22 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
             const gridSize = ${analysisParams?.gridSize || 1};
             const baseRadius = Math.min(gridSize * 350, 500);
             
+            // More aggressive overlap prevention
+            const gridSizeMeters = analysisParams.gridSize * 1000;
+            
+            // For public transit, use an even smaller circle
+            const isPublicTransit = analysisParams.travelMode.includes('TRANSIT');
+            const sizeMultiplier = isPublicTransit ? 0.25 : 0.3;
+            
+            // Calculate maximum radius to prevent overlap
+            const maxRadius = gridSizeMeters * sizeMultiplier;
+            
+            // Ensure we never exceed a certain maximum size regardless of grid
+            const absoluteMaxRadius = 300; // 300 meters maximum radius
+            
+            // Use the smallest of the calculated values
+            const radius = Math.min(baseRadius, maxRadius, absoluteMaxRadius);
+            
             if (analysisResults && analysisResults.length > 0) {
                 console.log('Adding ' + analysisResults.length + ' analysis points to map');
                 
@@ -845,6 +861,22 @@ function getInteractiveHtmlTemplate({ title, subtitle, basemap, mapBounds, cente
             // Calculate max circle radius based on grid size
             const gridSize = ${analysisParams?.gridSize || 1};
             const baseRadius = Math.min(gridSize * 350, 500);
+            
+            // More aggressive overlap prevention
+            const gridSizeMeters = analysisParams.gridSize * 1000;
+            
+            // For public transit, use an even smaller circle
+            const isPublicTransit = analysisParams.travelMode.includes('TRANSIT');
+            const sizeMultiplier = isPublicTransit ? 0.25 : 0.3;
+            
+            // Calculate maximum radius to prevent overlap
+            const maxRadius = gridSizeMeters * sizeMultiplier;
+            
+            // Ensure we never exceed a certain maximum size regardless of grid
+            const absoluteMaxRadius = 300; // 300 meters maximum radius
+            
+            // Use the smallest of the calculated values
+            const radius = Math.min(baseRadius, maxRadius, absoluteMaxRadius);
             
             // Statistics counters
             let sorokaFasterCount = 0;
