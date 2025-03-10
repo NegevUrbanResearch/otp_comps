@@ -405,10 +405,10 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
             
             // Add radius circle around the analysis center
             const analysisCenter = [(soroka[0] + newHospital[0]) / 2, (soroka[1] + newHospital[1]) / 2];
-            const radius = ${analysisParams?.radius || 30};
+            const analysisRadius = ${analysisParams?.radius || 30};
             
             L.circle(analysisCenter, {
-                radius: radius * 1000,  // Convert km to meters
+                radius: analysisRadius * 1000,  // Convert km to meters
                 color: '#2c3e50',
                 fillColor: '#2c3e50',
                 fillOpacity: 0.05,
@@ -420,23 +420,20 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
             const analysisResults = ${analysisResultsJSON};
             const equalTimeThreshold = ${analysisParams?.equalTimeThreshold || 2};
             
-            // Calculate max circle radius based on grid size
+            // Calculate max circle radius based on grid size and mode
             const gridSize = ${analysisParams?.gridSize || 1};
+
             const baseRadius = Math.min(gridSize * 350, 500);
-            
-            // More aggressive overlap prevention
-            const gridSizeMeters = analysisParams.gridSize * 1000;
-            
-            // For public transit, use an even smaller circle
-            const isPublicTransit = analysisParams.travelMode.includes('TRANSIT');
-            const sizeMultiplier = isPublicTransit ? 0.25 : 0.3;
-            
+            // Same overlap prevention for all modes
+            const gridSizeMeters = ${analysisParams?.gridSize || 1} * 1000;
+            const sizeMultiplier = 0.3; // Same multiplier for all modes
+                        
             // Calculate maximum radius to prevent overlap
             const maxRadius = gridSizeMeters * sizeMultiplier;
-            
-            // Ensure we never exceed a certain maximum size regardless of grid
-            const absoluteMaxRadius = 300; // 300 meters maximum radius
-            
+
+            // Same maximum size for all modes
+            const absoluteMaxRadius = 300;
+
             // Use the smallest of the calculated values
             const radius = Math.min(baseRadius, maxRadius, absoluteMaxRadius);
             
@@ -480,11 +477,7 @@ function getExportTemplate({ title, subtitle, basemap, mapBounds, center, zoom, 
                         }
                     }
                     
-                    // Size based on absolute time difference
-                    // Limit the maximum size to prevent huge circles
-                    const sizeMultiplier = Math.min(1 + (Math.abs(diffMinutes) / 30), 3);
-                    const radius = baseRadius * sizeMultiplier;
-                    
+                    const radius = baseRadius
                     // Create circle for this analysis point
                     const circle = L.circle(point, {
                         radius: radius,
@@ -843,10 +836,10 @@ function getInteractiveHtmlTemplate({ title, subtitle, basemap, mapBounds, cente
             
             // Add radius circle around the analysis center
             const analysisCenter = [(soroka[0] + newHospital[0]) / 2, (soroka[1] + newHospital[1]) / 2];
-            const radius = ${analysisParams?.radius || 30};
+            const analysisRadius = ${analysisParams?.radius || 30};
             
             L.circle(analysisCenter, {
-                radius: radius * 1000,  // Convert km to meters
+                radius: analysisRadius * 1000,  // Convert km to meters
                 color: '#2c3e50',
                 fillColor: '#2c3e50',
                 fillOpacity: 0.05,
@@ -858,22 +851,19 @@ function getInteractiveHtmlTemplate({ title, subtitle, basemap, mapBounds, cente
             const analysisResults = ${analysisResultsJSON};
             const equalTimeThreshold = ${analysisParams?.equalTimeThreshold || 2};
             
-            // Calculate max circle radius based on grid size
+            // Calculate max circle radius based on grid size and mode
             const gridSize = ${analysisParams?.gridSize || 1};
+            
             const baseRadius = Math.min(gridSize * 350, 500);
-            
-            // More aggressive overlap prevention
-            const gridSizeMeters = analysisParams.gridSize * 1000;
-            
-            // For public transit, use an even smaller circle
-            const isPublicTransit = analysisParams.travelMode.includes('TRANSIT');
-            const sizeMultiplier = isPublicTransit ? 0.25 : 0.3;
-            
+            // Same overlap prevention for all modes
+            const gridSizeMeters = ${analysisParams?.gridSize || 1} * 1000;
+            const sizeMultiplier = 0.3; // Same multiplier for all modes
+                        
             // Calculate maximum radius to prevent overlap
             const maxRadius = gridSizeMeters * sizeMultiplier;
             
-            // Ensure we never exceed a certain maximum size regardless of grid
-            const absoluteMaxRadius = 300; // 300 meters maximum radius
+            // Same maximum size for all modes
+            const absoluteMaxRadius = 300;
             
             // Use the smallest of the calculated values
             const radius = Math.min(baseRadius, maxRadius, absoluteMaxRadius);
@@ -935,10 +925,7 @@ function getInteractiveHtmlTemplate({ title, subtitle, basemap, mapBounds, cente
                         }
                     }
                     
-                    // Size based on absolute time difference
-                    // Limit the maximum size to prevent huge circles
-                    const sizeMultiplier = Math.min(1 + (Math.abs(diffMinutes) / 30), 3);
-                    const radius = baseRadius * sizeMultiplier;
+                    const radius = baseRadius 
                     
                     // Create circle for this analysis point
                     const circle = L.circle(point, {

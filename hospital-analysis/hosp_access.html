@@ -850,9 +850,23 @@ function displayPoint(result, baseRadius, sizeFactor, equalTimeThreshold) {
         }
     }
     
-    // REMOVED: Dynamic size scaling based on time difference
-    // Now using a fixed radius based only on the grid size
-    const radius = baseRadius * sizeFactor;
+    // More aggressive overlap prevention
+    // Use a smaller percentage of grid size to ensure no overlap even with PT
+    const gridSizeMeters = config.gridSize * 1000;
+    
+    // For public transit, use an even smaller circle
+    const isPublicTransit = config.travelMode.includes('TRANSIT');
+    const sizeMultiplier = isPublicTransit ? 0.25 : 0.3;
+    
+    // Calculate maximum radius to prevent overlap
+    // Add a small buffer by multiplying by slightly less than half
+    const maxRadius = gridSizeMeters * sizeMultiplier;
+    
+    // Ensure we never exceed a certain maximum size regardless of grid
+    const absoluteMaxRadius = 300; // 300 meters maximum radius
+    
+    // Use the smallest of the calculated values
+    const radius = Math.min(baseRadius, maxRadius, absoluteMaxRadius);
     
     const circle = L.circle(point, {
         radius: radius,
